@@ -4,6 +4,7 @@ from baselines/ppo1/mlp_policy.py and add simple modification
 (2) cache the `stochastic` placeholder
 '''
 import tensorflow as tf
+import numpy as np
 import gym
 
 import baselines.common.tf_util as U
@@ -22,8 +23,9 @@ class MlpPolicy(object):
             self._init(*args, **kwargs)
             self.scope = tf.get_variable_scope().name
 
-    def _init(self, ob_space, ac_space, hid_size, num_hid_layers, gaussian_fixed_var=True):
+    def _init(self, ob_space, ac_space, hid_size, num_hid_layers, z_space=0, gaussian_fixed_var=True):
         assert isinstance(ob_space, gym.spaces.Box)
+        self.z_space = z_space
 
         self.pdtype = pdtype = make_pdtype(ac_space)
         sequence_length = None
@@ -34,6 +36,13 @@ class MlpPolicy(object):
             self.ob_rms = RunningMeanStd(shape=ob_space.shape)
 
         obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
+        if z_space != 0:
+            z_shape = list(ob_space.shape)
+            z_shape[-1] = z_space
+            z = U.get_placeholder(name="z", dtype=tf.float32, shape=[sequence_length] + z_shape)
+            obz = tf.concat([obz, z], axis=-1)
+
+        print("Policy input dimension: {}".format(obz))
         last_out = obz
         for i in range(num_hid_layers):
             last_out = tf.nn.tanh(dense(last_out, hid_size, "vffc%i" % (i+1), weight_init=U.normc_initializer(1.0)))
@@ -59,10 +68,17 @@ class MlpPolicy(object):
         stochastic = U.get_placeholder(name="stochastic", dtype=tf.bool, shape=())
         ac = U.switch(stochastic, self.pd.sample(), self.pd.mode())
         self.ac = ac
-        self._act = U.function([stochastic, ob], [ac, self.vpred])
+        if z_space != 0:
+            self._act = U.function([stochastic, ob, z], [ac, self.vpred])
+        else:
+            self._act = U.function([stochastic, ob], [ac, self.vpred])
 
     def act(self, stochastic, ob):
-        ac1, vpred1 = self._act(stochastic, ob[None])
+        if self.z_space != 0:
+            z = np.random.normal(size=list(ob.shape[:-1]) + [self.z_space])
+            ac1, vpred1 = self._act(stochastic, ob[None], z)
+        else:
+            ac1, vpred1 = self._act(stochastic, ob[None])
         return ac1[0], vpred1[0]
 
     def get_variables(self):

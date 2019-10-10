@@ -155,13 +155,13 @@ def train(env, seed, policy_fn, reward_giver, dataset, algo,
 
 
 def runner(env, policy_func, load_model_path, timesteps_per_batch, number_trajs,
-           stochastic_policy, save=False, reuse=False):
+           stochastic_policy, z_space=0, save=False, reuse=False):
 
     # Setup network
     # ----------------------------------------
     ob_space = env.observation_space
     ac_space = env.action_space
-    pi = policy_func("pi", ob_space, ac_space, reuse=reuse)
+    pi = policy_func("pi", ob_space, ac_space, z_space, reuse=reuse)
     U.initialize()
     # Prepare for rollouts
     # ----------------------------------------
